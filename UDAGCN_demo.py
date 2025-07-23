@@ -3,7 +3,7 @@ import os
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 from argparse import ArgumentParser
-from dual_gnn.cached_gcn_conv import CachedGCNConv, IntermediateNode
+from dual_gnn.cached_gcn_conv import CachedGCNConv
 from dual_gnn.dataset.DomainData import DomainData
 import random
 import numpy as np
@@ -22,6 +22,27 @@ parser.add_argument("--encoder_dim", type=int, default=16)
 args = parser.parse_args()
 seed = args.seed
 encoder_dim = args.encoder_dim
+
+"""
+# 加载源数据集和目标数据集（已有代码）
+dataset = DomainData("data/{}".format(args.source), name=args.source)
+source_data = dataset[0]
+print("Source Data:")
+print(source_data)
+
+dataset = DomainData("data/{}".format(args.target), name=args.target)
+target_data = dataset[0]
+print("Target Data:")
+print(target_data)
+
+# 打印 source_data 的 edge_index 前3条边
+print("\nSource Data edge_index 前3条边:")
+print(source_data.edge_index[:, :3])  # 取前3列（前3条边）
+
+# 打印 target_data 的 edge_index 前3条边
+print("\nTarget Data edge_index 前3条边:")
+print(target_data.edge_index[:, :3])
+"""
 
 id = "source: {}, target: {}, seed: {}, encoder_dim: {}".format(args.source, args.target, seed, encoder_dim)
 print(id)
@@ -52,22 +73,13 @@ class GNN(torch.nn.Module):
             CachedGCNConv(128, encoder_dim, **kwargs)
         ])
 
-        self.intermediate_node = IntermediateNode()
-
+    #定义了 “输入特征 → 输出特征” 的完整转换逻辑,分两步逐层处理
     def forward(self, x, edge_index, cache_name):
-        # 第一层卷积
-        x = self.conv_layers[0](x, edge_index, cache_name, intermediate_node=self.intermediate_node)
-        x = F.relu(x)
-        x = self.dropout_layers[0](x)
-
-        # 从中间节点获取av结果
-        av = self.intermediate_node.get_av_result(cache_name)
-
-        # 第二层卷积使用中间节点的av结果
-        x = self.conv_layers[1](av, edge_index, cache_name)
-        if len(self.conv_layers) > 1:
-            x = F.relu(x)
-            x = self.dropout_layers[1](x)
+        for i, conv_layer in enumerate(self.conv_layers):
+            x = conv_layer(x, edge_index, cache_name)
+            if i < len(self.conv_layers) - 1:
+                x = F.relu(x)
+                x = self.dropout_layers[i](x) # 防止过拟合，提升泛化能力
         return x
 
 
